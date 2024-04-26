@@ -1,0 +1,191 @@
+// Hotelora Booking - Prisma schema cho ban PRODUCTION (PostgreSQL).
+// Day la mo hinh du lieu tuong ung 1-1 voi lop du lieu SQLite (node:sqlite)
+// dang dung cho dev/test trong backend/.
+// Chay production:
+//   DATABASE_URL=postgresql://user:pass@localhost:5432/hotelora
+//   npx prisma migrate deploy && npx prisma generate
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  GUEST
+  PARTNER
+  ADMIN
+}
+
+enum HotelStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+}
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+  EXPIRED
+}
+
+model User {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  passwordHash String
+  phone        String?
+  role         UserRole   @default(GUEST)
+  createdAt    DateTime   @default(now())
+  hotels       Hotel[]    @relation("PartnerHotels")
+  bookings     Booking[]
+  reviews      Review[]
+  wishlists    Wishlist[]
+  complaints   Complaint[]
+}
+
+model Hotel {
+  id          String      @id @default(cuid())
+  partnerId   String
+  partner     User        @relation("PartnerHotels", fields: [partnerId], references: [id])
+  name        String
+  city        String
+  address     String
+  stars       Int         @default(3)
+  status      HotelStatus @default(PENDING)
+  amenities   String[]
+  description String
+  images      String[]
+  createdAt   DateTime    @default(now())
+  roomTypes   RoomType[]
+  bookings    Booking[]
+  reviews     Review[]
+  wishlists   Wishlist[]
+  complaints  Complaint[]
+
+  @@index([city, status])
+}
+
+model RoomType {
+  id               String    @id @default(cuid())
+  hotelId          String
+  hotel            Hotel     @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  name             String
+  basePrice        Int // VND/dem, gia goc truoc he so gia dong
+  maxGuests        Int
+  totalRooms       Int // so phong vat ly - gioi han chong dat trung
+  sizeM2           Int
+  bed              String
+  // Chinh sach huy theo loai phong (snapshot vao Booking khi dat)
+  freeCancelDays    Int     @default(1)
+  lateRefundPercent Int     @default(50)
+  nonRefundable     Boolean @default(false)
+  bookings         Booking[]
+}
+
+model Booking {
+  id             String        @id @default(cuid())
+  code           String        @unique // ma dat phong HL-XXXXXX
+  userId         String
+  user           User          @relation(fields: [userId], references: [id])
+  hotelId        String
+  hotel          Hotel         @relation(fields: [hotelId], references: [id])
+  roomTypeId     String
+  roomType       RoomType      @relation(fields: [roomTypeId], references: [id])
+  checkin        DateTime      @db.Date
+  checkout       DateTime      @db.Date
+  rooms          Int           @default(1)
+  guests         Int           @default(1)
+  guestName      String
+  guestPhone     String?
+  status         BookingStatus @default(PENDING_PAYMENT)
+  nightly        Json // snapshot gia tung dem [{date, kind, multiplier, pricePerRoom}]
+  subtotal       Int
+  discount       Int           @default(0)
+  promoCode      String?
+  total          Int
+  policySnapshot Json // snapshot chinh sach huy tai thoi diem dat
+  paymentStatus  String        @default("UNPAID") // UNPAID | PAID_SIMULATED | REFUNDED
+  refundAmount   Int           @default(0)
+  cancelFee      Int           @default(0)
+  holdExpiresAt  DateTime? // giu phong tam khi cho thanh toan
+  createdAt      DateTime      @default(now())
+  cancelledAt    DateTime?
+  review         Review?
+  transactions   Transaction[]
+
+  @@index([roomTypeId, checkin, checkout, status])
+  @@index([userId])
+}
+
+model Transaction {
+  id            String   @id @default(cuid())
+  bookingId     String
+  booking       Booking  @relation(fields: [bookingId], references: [id])
+  hotelId       String
+  userId        String
+  type          String // PAYMENT_SIMULATED | REFUND_SIMULATED (thanh toan MO PHONG)
+  method        String?
+  amount        Int
+  commission    Int      @default(0) // hoa hong san 10%
+  partnerAmount Int      @default(0)
+  createdAt     DateTime @default(now())
+}
+
+model Review {
+  id           String   @id @default(cuid())
+  bookingId    String   @unique // moi dat phong danh gia 1 lan
+  booking      Booking  @relation(fields: [bookingId], references: [id])
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  hotelId      String
+  hotel        Hotel    @relation(fields: [hotelId], references: [id])
+  rating       Int // 1..5
+  comment      String
+  partnerReply String?
+  createdAt    DateTime @default(now())
+}
+
+model Wishlist {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  hotelId   String
+  hotel     Hotel    @relation(fields: [hotelId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([userId, hotelId])
+}
+
+model Promotion {
+  id           String    @id @default(cuid())
+  code         String    @unique
+  type         String // PERCENT | FIXED
+  value        Int
+  maxDiscount  Int?
+  minSubtotal  Int       @default(0)
+  expiresAt    DateTime?
+  maxUses      Int?
+  usedCount    Int       @default(0)
+  description  String
+}
+
+model Complaint {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  hotelId   String
+  hotel     Hotel    @relation(fields: [hotelId], references: [id])
+  bookingId String?
+  subject   String
+  content   String
+  status    String   @default("OPEN") // OPEN | IN_PROGRESS | RESOLVED | REJECTED
+  adminNote String?
+  createdAt DateTime @default(now())
+}
