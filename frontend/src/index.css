@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --color-sea-50: #effaf8;
+  --color-sea-100: #d7f2ec;
+  --color-sea-500: #0e8577;
+  --color-sea-600: #0b6e63;
+  --color-sea-700: #095a51;
+  --color-sea-900: #063f39;
+}
+
+body { background: #f4f8f7; color: #123; }
